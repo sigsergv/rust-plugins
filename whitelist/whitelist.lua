@@ -5,6 +5,7 @@ PLUGIN.Author = "Monstrado"
 function PLUGIN:Init()
   self.ServerWhitelistDataFile = datafile("server_whitelist")
   self:RefreshWhitelist()
+  self.isToggled = true
   
   oxmin_mod = cs.findplugin("oxmin")
   if not oxmin_mod or not oxmin then
@@ -17,8 +18,11 @@ function PLUGIN:Init()
   -- canblacklist = allowed to remove players from whitelist
   FLAG_CANWHITELIST = oxmin.AddFlag("canwhitelist")
   FLAG_CANBLACKLIST = oxmin.AddFlag("canblacklist")
+  FLAG_CANTOGGLEWHITELIST = oxmin.AddFlag("cantogglewhitelist")
   oxmin_mod:AddExternalOxminChatCommand(self, "whitelist", {FLAG_CANWHITELIST}, self.cmdWhitelist)
   oxmin_mod:AddExternalOxminChatCommand(self, "blacklist", {FLAG_CANBLACKLIST}, self.cmdBlacklist)
+  oxmin_mod:AddExternalOxminChatCommand(self, "whitelist_toggle", {FLAG_CANTOGGLEWHITELIST}, self.cmdToggle)
+  oxmin_mod:AddExternalOxminChatCommand(self, "whitelist_check", {}, self.cmdCheckToggle)
 end
 
 
@@ -90,18 +94,44 @@ end
 -- Takes an action argument
 function PLUGIN:performAction(netuser, args, action)
   local targetUserId = args[1]
+  local foundUser = false
+  local steamId = nil
+  -- Check if they are referencing the user by  name 
+  -- (i.e. they toggled the whitelist and the user is in game)
+  local b, targetuser = rust.FindNetUsersByName(targetUserId)
+  if (not b) then
+    if (targetuser > 0) then
+      rust.Notice( netuser, "Multiple players found with that name!" )
+      return
+    end
+  else
+    local steamId_tmp = tonumber(rust.GetUserID(targetuser))
+    steamId = self:CommunityIDToSteamID_fix(steamId_tmp)
+    targetUserId = self:ToSteamID64(steamId)
+    foundUser = true
+  end
+
   -- Whitelist
   if action == "whitelist" then
     if self:addToWhitelist(targetUserId) then
-      rust. Notice(netuser, "User added to the server whitelist")
+      rust.Notice(netuser, "User added to the server whitelist")
+      -- If an in-game user was referenced, notify they were added to the whitelist
+      if foundUser then
+        rust.Notice(targetuser, "You were been added to the server whitelist")
+      end
     else
       rust.Notice(netuser, "User already in whitelist")
       return
     end
     -- Blacklist
   elseif action == "blacklist" then
-    if self:removeFromWhitelist(targetUserId) then
+    -- If an in-game user was found, be safe and remove steamID and steamID64 versions of their ID.
+    if self:removeFromWhitelist(targetUserId) or self:removeFromWhitelist(steamId) then
       rust.Notice(netuser, "User removed from the server whitelist")
+      -- If an in-game user was referenced, notify they were removed from the whitelist
+      if foundUser then
+        rust.Notice(targetuser, "You were removed from the server whitelist")
+      end
     else
       rust.Notice(netuser, "User not found in whitelist")
       return
@@ -118,7 +148,7 @@ end
 -- 	usage: /whitelist <steam_id>
 function PLUGIN:cmdWhitelist(netuser, args)
   if (not args[1]) then
-    rust.Notice(netuser, "Syntax: /whitelist [steamid]")
+    rust.Notice(netuser, "Syntax: /whitelist [steamid] or [in-game playername]")
     return
   end
   self:performAction(netuser, args, "whitelist")
@@ -128,7 +158,7 @@ end
 -- 	usage: /blacklist <steam_id>
 function PLUGIN:cmdBlacklist(netuser, args)
   if (not args[1]) then
-    rust.Notice(netuser, "Syntax: /blacklist [steam_id]")
+    rust.Notice(netuser, "Syntax: /blacklist [steamid] or [in-game playername]")
     return
   end
   return self:performAction(netuser, args, "blacklist")
@@ -137,6 +167,11 @@ end
 -- Enforce whitelist_refresht
 local SteamIDField = field_get(RustFirstPass.SteamLogin, "SteamID", true)
 function PLUGIN:CanClientLogin(login)
+  -- Make sure whitelist is toggled (global variable)
+  if not self.isToggled then
+    return
+  end
+
   local steamlogin = login.SteamLogin
   local userID = tostring(SteamIDField(steamlogin))
   local steamId = self:CommunityIDToSteamID_fix(userID)
@@ -157,6 +192,29 @@ function PLUGIN:CanClientLogin(login)
       return NetError.ApprovalDenied
     end
   end
+end
+
+-- Toggle whitelist on and off
+function PLUGIN:cmdToggle(netuser, args)
+  local message = "Server Whitelist "
+  self.isToggled = not self.isToggled
+  if self.isToggled then
+    message = message .. " Enabled"
+  else
+    message = message .. " Disabled"
+  end
+  rust.Notice(netuser, message)
+end
+
+-- Check whitelist toggle
+function PLUGIN:cmdCheckToggle(netuser, args)
+  local message = "Server Whitelist is "
+  if self.isToggled then
+    message = message .. " Enabled"
+  else
+    message = message .. " Disabled"
+  end
+  rust.Notice(netuser, message)
 end
 
 -- Generic split function found on the internet
