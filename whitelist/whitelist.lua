@@ -36,7 +36,11 @@ end
 
 -- Check the size of the whitelist
 function PLUGIN:getWhitelistSize()
-  return table.getn(self.ServerWhitelistData)
+  local count = 0
+  for _, _ in pairs(self.ServerWhitelistData) do
+    count = count + 1
+  end
+  return count
 end
 
 -- Add user to whitelist
@@ -45,6 +49,7 @@ function PLUGIN:addToWhitelist(whitelistUserId)
     return false
   end
   table.insert(self.ServerWhitelistData, tostring(whitelistUserId))
+  self:Save()
   return true
 end
 
@@ -56,6 +61,11 @@ function PLUGIN:removeFromWhitelist(whitelistUserId)
   end
   table.remove(self.ServerWhitelistData, userIdPos)
   return true
+end
+
+-- Check if whitelist is empty
+function PLUGIN:isWhitelistEmpty()
+  return self:getWhitelistSize() == 0
 end
 
 --
@@ -126,23 +136,26 @@ end
 
 -- Enforce whitelist_refresht
 local SteamIDField = field_get(RustFirstPass.SteamLogin, "SteamID", true)
-function PLUGIN:OnUserConnect(netuser)
-  local steamId_tmp = tonumber(rust.GetUserID(netuser))
-  local steamId = self:CommunityIDToSteamID_fix(steamId_tmp)
+function PLUGIN:CanClientLogin(login)
+  local steamlogin = login.SteamLogin
+  local userID = tostring(SteamIDField(steamlogin))
+  local steamId = self:CommunityIDToSteamID_fix(userID)
   local steamId64 = self:ToSteamID64(steamId)
-
   -- Check  if the steamId is in the whitelist
   -- supports either SteamID, or SteamID64
   if self:inWhitelist(steamId64) or self:inWhitelist(steamId) then
     -- Access Granted
     return
   else
-    -- Access Denied
-    local deniedString = "You are not added to the whitelist [" .. steamId .. "]"
-    rust.Notice(netuser, deniedString)
-    rust.RunClientCommand(netuser, "chat.add \"" .. "Server" .. "\" \"" .. deniedString .. "\"")
-    netuser:Kick(NetError.Facepunch_Kick_RCON, true)
-    print("Kicked user \"" .. rust.QuoteSafe( netuser.displayName ) .. "\" ['" .. steamId64 .. "'] for not being in whitelist")
+    -- First user to join, create a new whitelist and add them to it
+    if self:isWhitelistEmpty() then
+      print("Adding first user to join ['" .. steamId64 .. "'] to the whitelist")
+      self:addToWhitelist(steamId64)
+    else
+      -- Access Denied
+      print("Kicked user with steamId ['" .. steamId64 .. "'] for not being in whitelist")
+      return NetError.ApprovalDenied
+    end
   end
 end
 
@@ -185,4 +198,4 @@ function PLUGIN:ToSteamID64(steamID)
     id = (((B * 2) + A) + 1197960265728)
     id = "7656" .. id
     return id
-end;
+end
