@@ -34,7 +34,7 @@ function PLUGIN:cmdTeleportCoords(netuser, args)
         rust.Notice(netuser, syntax)
         return
     end
-    local b, targetuser = rust.FindNetUsersByName("Monstrado")
+    local b, targetuser = rust.FindNetUsersByName(args[1])
     if (not b) then
         if (targetuser == 0) then
             rust.Notice( netuser, "No players found with that name!" )
