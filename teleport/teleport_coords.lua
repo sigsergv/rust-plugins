@@ -25,14 +25,14 @@ end
 -- Chat command to return user's coordinates
 -- /getcoords [optional:playername]
 function PLUGIN:cmdGetCoords(netuser, args)
-    local targetuser
+    local b, targetuser
     -- Check if a player name was specified
     if args[1] then
         if not oxmin_mod:HasFlag(netuser, self.FLAG_TELEPORT) then
             rust.Notice(netuser, "You do not have permission to obtain another player's coordinates")
             return
         else
-            local b, targetuser = rust.FindNetUsersByName(args[1])
+            b, targetuser = rust.FindNetUsersByName(args[1])
             if (not b) then
                 if (targetuser == 0) then
                     rust.Notice(netuser, "No players found with that name!")
