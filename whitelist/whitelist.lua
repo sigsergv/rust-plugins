@@ -164,7 +164,15 @@ function PLUGIN:cmdBlacklist(netuser, args)
   return self:performAction(netuser, args, "blacklist")
 end
 
--- Enforce whitelist_refresht
+function PLUGIN:NotifyWhitelistAdmins(message)
+  for _, netuser in pairs(rust.GetAllNetUsers()) do
+    if oxmin_mod:HasFlag(netuser, self.FLAG_CANWHITELIST) then
+      rust.SendChatToUser(netuser, message)
+    end
+  end 
+end
+
+-- Enforce whitelist_refresh
 local SteamIDField = field_get(RustFirstPass.SteamLogin, "SteamID", true)
 function PLUGIN:CanClientLogin(login)
   -- Make sure whitelist is toggled (global variable)
@@ -189,6 +197,7 @@ function PLUGIN:CanClientLogin(login)
     else
       -- Access Denied
       print("Kicked user with steamId ['" .. steamId64 .. "'] for not being in whitelist")
+      self:NotifyWhitelistAdmins("Whitelist denied access to " .. login.SteamLogin.Username .. " [ID: " .. steamId .. "]")
       return NetError.ApprovalDenied
     end
   end
@@ -225,7 +234,7 @@ function string:split(inSplitPattern, outResults)
    end
    local theStart = 1
    local theSplitStart, theSplitEnd = string.find(self, inSplitPattern, theStart)
-   while theSplitStart do
+     while theSplitStart do
       table.insert(outResults, string.sub(self, theStart, theSplitStart-1))
       theStart = theSplitEnd + 1
       theSplitStart, theSplitEnd = string.find(self, inSplitPattern, theStart)
