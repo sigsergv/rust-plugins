@@ -9,7 +9,7 @@ function PLUGIN:Init()
         return;
     end;
     self.FLAG_TELEPORT = oxmin.strtoflag["canteleport"]
-    oxmin_mod:AddExternalOxminChatCommand(self, "tpc", {FLAG_TELEPORT}, self.cmdTeleportCoords)
+    oxmin_mod:AddExternalOxminChatCommand(self, "tpc", {self.FLAG_TELEPORT}, self.cmdTeleportCoords)
     oxmin_mod:AddExternalOxminChatCommand(self, "coords", {}, self.cmdGetCoords)
 end
 
