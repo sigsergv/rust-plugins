@@ -8,7 +8,8 @@ function PLUGIN:Init()
         print("Whitelist critical failure! Oxmin required to run use this plugin")
         return;
     end;
-    oxmin_mod:AddExternalOxminChatCommand(self, "tpc", {oxmin.strtoflag["canteleport"]}, self.cmdTeleportCoords)
+    self.FLAG_TELEPORT = oxmin.strtoflag["canteleport"]
+    oxmin_mod:AddExternalOxminChatCommand(self, "tpc", {FLAG_TELEPORT}, self.cmdTeleportCoords)
     oxmin_mod:AddExternalOxminChatCommand(self, "coords", {}, self.cmdGetCoords)
 end
 
@@ -22,14 +23,38 @@ function PLUGIN:TeleportNetuser(netuser, x, y, z)
 end
 
 -- Chat command to return user's coordinates
+-- /getcoords [optional:playername]
 function PLUGIN:cmdGetCoords(netuser, args)
-    local coords = netuser.playerClient.lastKnownPosition
-    rust.SendChatToUser( netuser, "Current Position: {x: " .. coords.x .. ", y: " .. coords.y .. ", z: " .. coords.z .. "}")
+    local targetuser
+    -- Check if a player name was specified
+    if args[1] then
+        if not oxmin_mod:HasFlag(netuser, self.FLAG_TELEPORT) then
+            rust.Notice(netuser, "You do not have permission to obtain another player's coordinates")
+            return
+        else
+            local b, targetuser = rust.FindNetUsersByName(args[1])
+            if (not b) then
+                if (targetuser == 0) then
+                    rust.Notice(netuser, "No players found with that name!")
+                else
+                    rust.Notice(netuser, "Multiple players found with that name!")
+                end
+                return
+            end
+        end
+    end
+    -- If no player was specified, use netuser
+    if not targetuser then
+        targetuser = netuser
+    end
+    local coords = targetuser.playerClient.lastKnownPosition
+    rust.SendChatToUser( netuser, targetuser.displayName .. "'s Position: {x: " .. coords.x .. ", y: " .. coords.y .. ", z: " .. coords.z .. "}")
 end
 
 -- Chat command to teleport user to a set of coordinates
+-- /tpc <playername> <x coord> <y coord> <z coord>
 function PLUGIN:cmdTeleportCoords(netuser, args) 
-    local syntax = "Syntax: /teleport [name] [x coord] [y coord] [z coord]"
+    local syntax = "Syntax: /tpc [name] [x coord] [y coord] [z coord]"
     if not args[4] then
         rust.Notice(netuser, syntax)
         return
