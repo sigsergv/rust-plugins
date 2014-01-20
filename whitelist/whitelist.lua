@@ -3,7 +3,7 @@ PLUGIN.Description = "Allows admin to grant access to specific users"
 PLUGIN.Author = "Monstrado"
 
 function PLUGIN:Init()
-  self.ServerWhitelistDataFile = datafile("server_whitelist")
+  self.ServerWhitelistDataFile = util.GetDatafile("server_whitelist")
   self:RefreshWhitelist()
   self.isToggled = true
   
@@ -82,7 +82,7 @@ end
 --
 -- Reread whitelist state
 function PLUGIN:RefreshWhitelist()
-  self.ServerWhitelistDataFile = datafile("server_whitelist")
+  self.ServerWhitelistDataFile = util.GetDatafile("server_whitelist")
   local json_txt = json.decode(self.ServerWhitelistDataFile:GetText())
   if not json_txt then
     json_txt = {}
