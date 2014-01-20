@@ -173,7 +173,7 @@ function PLUGIN:NotifyWhitelistAdmins(message)
 end
 
 -- Enforce whitelist_refresh
-local SteamIDField = field_get(RustFirstPass.SteamLogin, "SteamID", true)
+local SteamIDField = util.GetFieldGetter(RustFirstPass.SteamLogin, "SteamID", true)
 function PLUGIN:CanClientLogin(login)
   -- Make sure whitelist is toggled (global variable)
   if not self.isToggled then

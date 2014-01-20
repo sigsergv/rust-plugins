@@ -1,8 +1,13 @@
+--[[ **************** ]]--
+--[[ oxmin - thomasfn ]]--
+--[[ **************** ]]--
+
+
+-- Define plugin variables
 PLUGIN.Title = "Oxmin"
 PLUGIN.Description = "Administration mod"
 
-PLUGIN.ReservedSlots = 5
-
+-- Load oxmin module
 if (not oxmin) then
 	oxmin = {}
 	oxmin.flagtostr = {}
@@ -18,13 +23,14 @@ function oxmin.AddFlag( name )
 	return id
 end
 
+-- Add all default flags
 local FLAG_ALL = oxmin.AddFlag( "all" )
 local FLAG_BANNED = oxmin.AddFlag( "banned" )
 local FLAG_CANKICK = oxmin.AddFlag( "cankick" )
 local FLAG_CANBAN = oxmin.AddFlag( "canban" )
 local FLAG_CANUNBAN = oxmin.AddFlag( "canunban" ) -- !
 local FLAG_CANTELEPORT = oxmin.AddFlag( "canteleport" )
-local FLAG_CANGIVE = oxmin.AddFlag( "cangive" ) -- !
+local FLAG_CANGIVE = oxmin.AddFlag( "cangive" )
 local FLAG_CANGOD = oxmin.AddFlag( "cangod" )
 local FLAG_GODMODE = oxmin.AddFlag( "godmode" ) -- !
 local FLAG_CANLUA = oxmin.AddFlag( "canlua" )
@@ -32,11 +38,16 @@ local FLAG_CANCALLAIRDROP = oxmin.AddFlag( "cancallairdrop" )
 local FLAG_CANGIVE = oxmin.AddFlag( "cangive" )
 local FLAG_RESERVED = oxmin.AddFlag( "reserved" )
 
-local newusertext = "Welcome %s, type /help for information about the server!"
-
+-- *******************************************
+-- PLUGIN:Init()
+-- Initialises the Oxmin plugin
+-- *******************************************
 function PLUGIN:Init()
+	-- Notify console that oxmin is loading
 	print( "Loading Oxmin..." )
-	self.DataFile = datafile( "oxmin" )
+	
+	-- Load the user datafile
+	self.DataFile = util.GetDatafile( "oxmin" )
 	local txt = self.DataFile:GetText()
 	if (txt ~= "") then
 		self.Data = json.decode( txt )
@@ -44,12 +55,24 @@ function PLUGIN:Init()
 		self.Data = {}
 		self.Data.Users = {}
 	end
+	
+	-- Count and output the number of users
 	local cnt = 0
 	for _, _ in pairs( self.Data.Users ) do cnt = cnt + 1 end
 	print( tostring( cnt ) .. " users are tracked by Oxmin!" )
-	self.ChatCommands = {}
+	
+	-- Load the config file
+	local b, res = config.Read( "oxmin" )
+	self.Config = res or {}
+	if (not b) then
+		self:LoadDefaultConfig()
+		if (res) then config.Save( "oxmin" ) end
+	end
+	
+	-- Add chat commands
 	self:AddOxminChatCommand( "kick", { FLAG_CANKICK }, self.cmdKick )
 	self:AddOxminChatCommand( "ban", { FLAG_CANBAN }, self.cmdBan )
+	self:AddOxminChatCommand( "unban", { FLAG_CANBAN }, self.cmdUnban )
 	self:AddOxminChatCommand( "lua", { FLAG_CANLUA }, self.cmdLua )
 	self:AddOxminChatCommand( "god", { FLAG_CANGOD }, self.cmdGod )
 	self:AddOxminChatCommand( "airdrop", { FLAG_CANCALLAIRDROP }, self.cmdAirdrop )
@@ -58,21 +81,67 @@ function PLUGIN:Init()
 	self:AddOxminChatCommand( "who", { }, self.cmdWho )
 	self:AddOxminChatCommand( "tp", { FLAG_CANTELEPORT }, self.cmdTeleport )
 	self:AddOxminChatCommand( "bring", { FLAG_CANTELEPORT }, self.cmdBring )
+	
+	-- Add console commands
 	self:AddCommand( "oxmin", "giveflag", self.ccmdGiveFlag )
 	self:AddCommand( "oxmin", "takeflag", self.ccmdTakeFlag )
 end
 
+-- *******************************************
+-- PLUGIN:LoadDefaultConfig()
+-- Loads the default configuration into the config table
+-- *******************************************
+function PLUGIN:LoadDefaultConfig()
+	-- Set default configuration settings
+	self.Config.chatname = "Oxmin"
+	self.Config.reservedslots = 5
+	self.Config.showwelcomenotice = true
+	self.Config.welcomenotice = "Welcome to the server %s! Type /help for a list of commands."
+	self.Config.showconnectedmessage = true
+	self.Config.showdisconnectedmessage = true
+	self.Config.helptext =
+	{
+		"Welcome to the server!",
+		"This server is powered by the Oxide Modding API for Rust.",
+		"Use /who to see how many players are online."
+	}
+end
+
+-- *******************************************
+-- PLUGIN:AddOxminChatCommand()
+-- Adds an internal chat command with flag requirements
+-- *******************************************
 function PLUGIN:AddOxminChatCommand( name, flagsrequired, callback )
+	-- Add external chat command to ourself
+	self:AddExternalOxminChatCommand( self, name, flagsrequired, callback )
+end
+
+-- *******************************************
+-- PLUGIN:AddExternalOxminChatCommand()
+-- Adds an external chat command with flag requirements
+-- *******************************************
+function PLUGIN:AddExternalOxminChatCommand( plugin, name, flagsrequired, callback )
+	-- Get a reference to the oxmin plugin
+	local oxminplugin = cs.findplugin( "oxmin" )
+	if (not oxminplugin) then
+		error( "Oxmin plugin file was renamed (don't do this)!" )
+		return
+	end
+	
+	-- Define a "proxy" callback that checks for flags
 	local function FixedCallback( self, netuser, cmd, args )
 		for i=1, #flagsrequired do
-			if (not self:HasFlag( netuser, flagsrequired[i] )) then
+			if (not oxminplugin:HasFlag( netuser, flagsrequired[i] )) then
 				rust.Notice( netuser, "You don't have permission to use this command!" )
 				return true
 			end
 		end
+		print( "'" .. netuser.displayName .. "' (" .. rust.CommunityIDToSteamID( tonumber( rust.GetUserID( netuser ) ) ) .. ") ran command '/" .. cmd .. " " .. table.concat( args, " " ) .. "'" )
 		callback( self, netuser, args )
 	end
-	self:AddChatCommand( name, FixedCallback )
+	
+	-- Add the chat command
+	plugin:AddChatCommand( name, FixedCallback )
 end
 
 -- PATCHED SECTION
@@ -89,9 +158,16 @@ function PLUGIN:AddExternalOxminChatCommand( context, name, flagsrequired, callb
 	context:AddChatCommand( name, FixedCallback )
 end
 
+-- *******************************************
+-- PLUGIN:ccmdGiveFlag()
+-- Console command callback (oxmin.giveflag <user> <flag>)
+-- *******************************************
 function PLUGIN:ccmdGiveFlag( arg )
+	-- Check the caller has admin or rcon
 	local user = arg.argUser
 	if (user and not user:CanAdmin()) then return end
+	
+	-- Locate the target user
 	local b, targetuser = rust.FindNetUsersByName( arg:GetString( 0 ) )
 	if (not b) then
 		if (targetuser == 0) then
@@ -101,18 +177,33 @@ function PLUGIN:ccmdGiveFlag( arg )
 		end
 		return
 	end
-	local targetname = rust.QuoteSafe( targetuser.displayName )
+	
+	-- Locate the flag
 	local flagid = oxmin.strtoflag[ arg:GetString( 1 ) ]
 	if (not flagid) then
 		arg:ReplyWith( "Unknown flag!" )
 		return
 	end
+	
+	-- Give the flag
+	local targetname = util.QuoteSafe( targetuser.displayName )
 	self:GiveFlag( targetuser, flagid )
 	arg:ReplyWith( "Flag given to " .. targetname .. "." )
+	
+	-- Handled
+	return true
 end
+
+-- *******************************************
+-- PLUGIN:ccmdTakeFlag()
+-- Console command callback (oxmin.takeflag <user> <flag>)
+-- *******************************************
 function PLUGIN:ccmdTakeFlag( arg )
+	-- Check the caller has admin or rcon
 	local user = arg.argUser
 	if (user and not user:CanAdmin()) then return end
+	
+	-- Locate the target user
 	local b, targetuser = rust.FindNetUsersByName( arg:GetString( 0 ) )
 	if (not b) then
 		if (targetuser == 0) then
@@ -122,33 +213,66 @@ function PLUGIN:ccmdTakeFlag( arg )
 		end
 		return
 	end
-	local targetname = rust.QuoteSafe( targetuser.displayName )
+	
+	-- Locate the flag
 	local flagid = oxmin.strtoflag[ arg:GetString( 1 ) ]
 	if (not flagid) then
 		arg:ReplyWith( "Unknown flag!" )
 		return
 	end
+	
+	-- Take the flag
+	local targetname = util.QuoteSafe( targetuser.displayName )
 	self:TakeFlag( targetuser, flagid )
 	arg:ReplyWith( "Flag taken from " .. targetname .. "." )
+	
+	-- Handled
+	return true
 end
+
+-- *******************************************
+-- PLUGIN:Save()
+-- Saves the player data to file
+-- *******************************************
 function PLUGIN:Save()
 	self.DataFile:SetText( json.encode( self.Data ) )
 	self.DataFile:Save()
 end
-local SteamIDField = field_get( RustFirstPass.SteamLogin, "SteamID", true )
-local PlayerClientAll = static_property_get( RustFirstPass.PlayerClient, "All" )
-local serverMaxPlayers = static_field_get( RustFirstPass.server, "maxplayers" )
+
+-- *******************************************
+-- PLUGIN:BroadcastChat()
+-- Broadcasts a chat message
+-- *******************************************
+function PLUGIN:BroadcastChat( msg )
+	rust.BroadcastChat( self.Config.chatname, msg )
+end
+
+-- *******************************************
+-- PLUGIN:CanClientLogin()
+-- Saves the player data to file
+-- *******************************************
+local SteamIDField = util.GetFieldGetter( RustFirstPass.SteamLogin, "SteamID", true )
+--local PlayerClientAll = util.GetStaticPropertyGetter( RustFirstPass.PlayerClient, "All" )
+--local serverMaxPlayers = util.GetStaticFieldGetter( RustFirstPass.server, "maxplayers" )
 function PLUGIN:CanClientLogin( login )
+	-- Get the user ID and player data
 	local steamlogin = login.SteamLogin
 	local userID = tostring( SteamIDField( steamlogin ) )
 	local data = self:GetUserDataFromID( userID, steamlogin.UserName )
+	
+	-- Check if they have the banned flag
 	for i=1, #data.Flags do
 		local f = data.Flags[i]
-		if (f == FLAG_BANNED) then return NetError.Facepunch_Kick_Ban end
+		if (f == FLAG_BANNED) then return NetError.ConnectionBanned end
 	end
-	local maxplayers = serverMaxPlayers()
+	
+	-- Get the maximum number of players
+	local maxplayers = RustFirstPass.server.maxplayers
 	local curplayers = self:GetUserCount()
-	if (curplayers + self.ReservedSlots >= maxplayers) then
+	
+	-- Are we biting into reserved slots?
+	if (curplayers + self.Config.reservedslots >= maxplayers) then
+		-- Check if they have reserved flag
 		for i=1, #data.Flags do
 			local f = data.Flags[i]
 			if (f == FLAG_RESERVED or f == FLAG_ALL) then return end
@@ -156,24 +280,52 @@ function PLUGIN:CanClientLogin( login )
 		return NetError.Facepunch_Approval_TooManyConnectedPlayersNow
 	end
 end
+
+-- *******************************************
+-- PLUGIN:GetUserCount()
+-- Gets the number of connected users
+-- *******************************************
 function PLUGIN:GetUserCount()
-	return PlayerClientAll().Count
+	return RustFirstPass.PlayerClient.All.Count
 end
+
+-- *******************************************
+-- PLUGIN:OnUserConnect()
+-- Called when a user has connected
+-- *******************************************
 function PLUGIN:OnUserConnect( netuser )
 	local sid = rust.CommunityIDToSteamID( tonumber( rust.GetUserID( netuser ) ) )
-	print( "User \"" .. rust.QuoteSafe( netuser.displayName ) .. "\" connected with SteamID '" .. sid .. "'" )
+	print( "User \"" .. util.QuoteSafe( netuser.displayName ) .. "\" connected with SteamID '" .. sid .. "'" )
 	local data = self:GetUserData( netuser )
 	data.Connects = data.Connects + 1
 	self:Save()
-	if (data.Connects == 1) then
-		rust.Notice( netuser, newusertext:format( netuser.displayName ), 20.0 )
+	if (data.Connects == 1 and self.Config.showwelcomenotice) then
+		rust.Notice( netuser, self.Config.welcomenotice:format( netuser.displayName ), 20.0 )
 	end
-	rust.BroadcastChat( netuser.displayName .. " has joined the game." )
+	if (self.Config.showconnectedmessage) then self:BroadcastChat( netuser.displayName .. " has joined the game." ) end
 end
+
+-- *******************************************
+-- PLUGIN:OnUserDisconnect()
+-- Called when a user has disconnected
+-- *******************************************
+function PLUGIN:OnUserDisconnect( netuser )
+	if (self.Config.showdisconnectedmessage) then self:BroadcastChat( netuser.displayName .. " has left the game." ) end
+end
+
+-- *******************************************
+-- PLUGIN:GetUserData()
+-- Gets a persistent table associated with the given user
+-- *******************************************
 function PLUGIN:GetUserData( netuser )
 	local userID = rust.GetUserID( netuser )
 	return self:GetUserDataFromID( userID, netuser.displayName )
 end
+
+-- *******************************************
+-- PLUGIN:GetUserDataFromID()
+-- Gets a persistent table associated with the given user ID
+-- *******************************************
 function PLUGIN:GetUserDataFromID( userID, name )
 	local userentry = self.Data.Users[ userID ]
 	if (not userentry) then
@@ -187,15 +339,26 @@ function PLUGIN:GetUserDataFromID( userID, name )
 	end
 	return userentry
 end
-function PLUGIN:HasFlag( netuser, flag )
+
+-- *******************************************
+-- PLUGIN:HasFlag()
+-- Returns true if the specified user has the specified flag
+-- *******************************************
+function PLUGIN:HasFlag( netuser, flag, ignoreall )
 	local userID = rust.GetUserID( netuser )
 	local data = self:GetUserData( netuser )
 	for i=1, #data.Flags do
 		local f = data.Flags[i]
-		if ((f == FLAG_ALL and flag ~= FLAG_BANNED) or f == flag) then return true end
+		if (f == FLAG_ALL and not ignoreall) then return true end
+		if (f == flag) then return true end
 	end
 	return false
 end
+
+-- *******************************************
+-- PLUGIN:GiveFlag()
+-- Gives the specified flag to the specified user
+-- *******************************************
 function PLUGIN:GiveFlag( netuser, flag )
 	local userID = rust.GetUserID( netuser )
 	local data = self:GetUserData( netuser )
@@ -207,6 +370,11 @@ function PLUGIN:GiveFlag( netuser, flag )
 	self:Save()
 	return true
 end
+
+-- *******************************************
+-- PLUGIN:TakeFlag()
+-- Takes the specified flag from the specified user
+-- *******************************************
 function PLUGIN:TakeFlag( netuser, flag )
 	local userID = rust.GetUserID( netuser )
 	local data = self:GetUserData( netuser )
@@ -220,33 +388,33 @@ function PLUGIN:TakeFlag( netuser, flag )
 	end
 	return false
 end
-function PLUGIN:OnTakeDamage( dmg )
-	--[[print( "OnTakeDamage!" )
-	print( dmg )
-	print( dmg.attacker )
-	print( dmg.victim )]]
-	local client = dmg.victim.client
-	if (client) then
-		print( "Client valid!" )
-		local user = client.netUser
-		if (self:HasFlag( user, FLAG_GODMODE )) then
-			dmg.amount = 0
-			local attacker = dmg.attacker.client
-			if (attacker) then
-				rust.Notice( attacker.netUser, "That player is in godmode!" )
+
+-- *******************************************
+-- PLUGIN:OnTakeDamage()
+-- Called when an entity take damage
+-- *******************************************
+function PLUGIN:ModifyDamage( takedamage, damage )
+	local char = takedamage:GetComponent( "Character" )
+	if (char) then
+		local netplayer = char.networkViewOwner
+		if (netplayer) then
+			local netuser = rust.NetUserFromNetPlayer( netplayer )
+			if (netuser) then
+				if (oxminplugin:HasFlag( netuser, FLAG_GODMODE, true )) then
+					damage.amount = 0
+					return damage
+				end
 			end
-			print( "Returning something!" )
-			return dmg
 		end
 	end
 end
 
 -- CHAT COMMANDS --
 function PLUGIN:cmdHelp( netuser, args )
-	rust.SendChatToUser( netuser, "Welcome to the server!" )
-	rust.SendChatToUser( netuser, "This server is powered by the Oxide Modding API for Rust." )
-	rust.SendChatToUser( netuser, "Use /who to see how many players are online." )
-	callplugins( "SendHelpText", netuser )
+	for i=1, #self.Config.helptext do
+		rust.SendChatToUser( netuser, self.Config.helptext[i] )
+	end
+	plugins.Call( "SendHelpText", netuser )
 end
 function PLUGIN:cmdWho( netuser, args )
 	rust.SendChatToUser( netuser, "There are " .. tostring( #rust.GetAllNetUsers() ) .. " survivors online." )
@@ -265,8 +433,8 @@ function PLUGIN:cmdKick( netuser, args )
 		end
 		return
 	end
-	local targetname = rust.QuoteSafe( targetuser.displayName )
-	rust.BroadcastChat( "'" .. targetname .. "' was kicked by '" .. rust.QuoteSafe( netuser.displayName ) .. "'!" )
+	local targetname = util.QuoteSafe( targetuser.displayName )
+	self:BroadcastChat( "'" .. targetname .. "' was kicked by '" .. util.QuoteSafe( netuser.displayName ) .. "'!" )
 	rust.Notice( netuser, "\"" .. targetname .. "\" kicked." )
 	targetuser:Kick( NetError.Facepunch_Kick_RCON, true )
 end
@@ -284,14 +452,33 @@ function PLUGIN:cmdBan( netuser, args )
 		end
 		return
 	end
-	local targetname = rust.QuoteSafe( targetuser.displayName )
-	rust.BroadcastChat( "'" .. targetname .. "' was banned by '" .. rust.QuoteSafe( netuser.displayName ) .. "'!" )
+	local targetname = util.QuoteSafe( targetuser.displayName )
+	self:BroadcastChat( "'" .. targetname .. "' was banned by '" .. util.QuoteSafe( netuser.displayName ) .. "'!" )
 	rust.Notice( netuser, "\"" .. targetname .. "\" banned." )
 	self:GiveFlag( targetuser, FLAG_BANNED )
 	targetuser:Kick( NetError.Facepunch_Kick_Ban, true )
 end
 function PLUGIN:cmdUnban( netuser, args )
-	-- TODO: This
+	if (not args[1]) then
+		rust.Notice( netuser, "Syntax: /unban name" )
+		return
+	end
+	local candidates = {}
+	for id, data in pairs( self.Data.Users ) do
+		if (data.Name:match( args[1] )) then
+			candidates[ #candidates + 1 ] = data
+		end
+	end
+	if (#candidates == 0) then
+		rust.Notice( netuser, "No banned users found with that name!" )
+		return
+	elseif (#candidates > 1) then
+		rust.Notice( netuser, "Multiple banned users found with that name!" )
+		return
+	end
+	candidates[1].Flags = {}
+	self:Save()
+	rust.Notice( netuser, util.QuoteSafe( candidates[1].Name ) .. " unbanned." )
 end
 function PLUGIN:cmdTeleport( netuser, args )
 	if (not args[1]) then
@@ -310,8 +497,8 @@ function PLUGIN:cmdTeleport( netuser, args )
 	if (not args[2]) then
 		-- Teleport netuser to targetuser
 		rust.ServerManagement():TeleportPlayerToPlayer( netuser.networkPlayer, targetuser.networkPlayer )
-		rust.Notice( netuser, "You teleported to '" .. rust.QuoteSafe( targetuser.displayName ) .. "'!" )
-		rust.Notice( targetuser, "'" .. rust.QuoteSafe( netuser.displayName ) .. "' teleported to you!" )
+		rust.Notice( netuser, "You teleported to '" .. util.QuoteSafe( targetuser.displayName ) .. "'!" )
+		rust.Notice( targetuser, "'" .. util.QuoteSafe( netuser.displayName ) .. "' teleported to you!" )
 	else
 		local b, targetuser2 = rust.FindNetUsersByName( args[2] )
 		if (not b) then
@@ -325,8 +512,8 @@ function PLUGIN:cmdTeleport( netuser, args )
 		
 		-- Teleport targetuser to targetuser2
 		rust.ServerManagement():TeleportPlayerToPlayer( targetuser.networkPlayer, targetuser2.networkPlayer )
-		rust.Notice( targetuser, "You were teleported to '" .. rust.QuoteSafe( targetuser2.displayName ) .. "'!" )
-		rust.Notice( targetuser2, "'" .. rust.QuoteSafe( targetuser.displayName ) .. "' teleported to you!" )
+		rust.Notice( targetuser, "You were teleported to '" .. util.QuoteSafe( targetuser2.displayName ) .. "'!" )
+		rust.Notice( targetuser2, "'" .. util.QuoteSafe( targetuser.displayName ) .. "' teleported to you!" )
 	end
 end
 function PLUGIN:cmdGod( netuser, args )
@@ -345,7 +532,7 @@ function PLUGIN:cmdGod( netuser, args )
 		end
 		return
 	end
-	local targetname = rust.QuoteSafe( targetuser.displayName )
+	local targetname = util.QuoteSafe( targetuser.displayName )
 	if (self:GiveFlag( targetuser, FLAG_GODMODE )) then
 		rust.Notice( netuser, "\"" .. targetname .. "\" now has godmode." )
 	elseif (self:TakeFlag( targetuser, FLAG_GODMODE )) then
@@ -371,6 +558,7 @@ function PLUGIN:cmdLua( netuser, args )
 	end
 end
 function PLUGIN:cmdAirdrop( netuser, args )
+	rust.Notice( netuser, "Airdrop called!" )
 	rust.CallAirdrop()
 end
 
@@ -388,9 +576,9 @@ function PLUGIN:cmdGive( netuser, args )
 	-- IInventoryItem objA = current.AddItem(byName, Inventory.Slot.Preference.Define(Inventory.Slot.Kind.Default, false, Inventory.Slot.KindFlags.Belt), quantity);
 	local pref = rust.InventorySlotPreference( InventorySlotKind.Default, false, InventorySlotKindFlags.Belt )
 	local inv = netuser.playerClient.rootControllable.idMain:GetComponent( "Inventory" )
-	print( datablock )
-	print( pref )
-	print( amount )
+	--print( datablock )
+	--print( pref )
+	--print( amount )
 	--local invitem = inv:AddItem( datablock, pref, amount )
 	local invitem = inv:AddItemAmount( datablock, amount, pref )
 	
